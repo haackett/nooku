@@ -31,6 +31,21 @@ use serenity::{
     Result as SerenityResult,
 };
 
+use songbird::tracks::TrackError;
+use songbird::{
+    driver::Bitrate,
+    input::{
+        self,
+        cached::{Compressed, Memory},
+        Input,
+    },
+    Call,
+    Event,
+    EventContext,
+    EventHandler as VoiceEventHandler,
+    TrackEvent,
+};
+
 struct Handler;
 
 #[async_trait]
@@ -292,6 +307,7 @@ async fn unmute(ctx: &Context, msg: &Message) -> CommandResult {
     Ok(())
 }
 
+//Function for testing how to loop media playback from local storage
 #[command]
 #[only_in(guilds)]
 async fn nook(ctx: &Context, msg: &Message) -> CommandResult {
@@ -305,7 +321,7 @@ async fn nook(ctx: &Context, msg: &Message) -> CommandResult {
     if let Some(handler_lock) = manager.get(guild_id) {
         let mut handler = handler_lock.lock().await;
 
-        let source = match songbird::ffmpeg("/home/megu/Programming/Rust/nooku/songs/016 - Animal Crossing New Leaf (3DS) - 2 AM.ogg").await {
+        let source = match songbird::input::restartable::Restartable::ffmpeg("songs/200 - Animal Crossing New Leaf (3DS) - SFX - Pavé's Finale.flac", false).await {
             Ok(source) => source,
             Err(why) => {
                 println!("Err starting source: {:?}", why);
@@ -316,7 +332,8 @@ async fn nook(ctx: &Context, msg: &Message) -> CommandResult {
             },
         };
 
-        handler.play_source(source);
+        let song = handler.play_source(source.into());
+        let _ = song.enable_loop();
 
         check_msg(msg.channel_id.say(&ctx.http, "Playing song").await);
     } else {

@@ -17,5 +17,6 @@ Cargo.lock
 .vscode
 
 songs/*.ogg
+songs/*.flac
 
 secret.fish
