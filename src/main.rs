@@ -31,6 +31,8 @@ use serenity::{
     Result as SerenityResult,
 };
 
+use chrono::*;
+
 use songbird::tracks::TrackError;
 use songbird::{
     driver::Bitrate,
@@ -51,7 +53,7 @@ struct Handler;
 #[async_trait]
 impl EventHandler for Handler {
     async fn ready(&self, _: Context, ready: Ready) {
-        println!("{} is connected!", ready.user.name);
+        println!("{} is connected at {}!", ready.user.name, Local::now().to_string());
     }
 }
 
@@ -321,7 +323,7 @@ async fn nook(ctx: &Context, msg: &Message) -> CommandResult {
     if let Some(handler_lock) = manager.get(guild_id) {
         let mut handler = handler_lock.lock().await;
 
-        let source = match songbird::input::restartable::Restartable::ffmpeg("songs/200 - Animal Crossing New Leaf (3DS) - SFX - Pavé's Finale.flac", false).await {
+        let source = match songbird::input::restartable::Restartable::ffmpeg("songs/032 - Animal Crossing New Leaf (3DS) - 6 PM.flac", false).await {
             Ok(source) => source,
             Err(why) => {
                 println!("Err starting source: {:?}", why);
@@ -335,7 +337,11 @@ async fn nook(ctx: &Context, msg: &Message) -> CommandResult {
         let song = handler.play_source(source.into());
         let _ = song.enable_loop();
 
-        check_msg(msg.channel_id.say(&ctx.http, "Playing song").await);
+        let local_time: DateTime<Local> = Local::now();
+        let time_string = local_time.to_string();
+        let mut play_message = String::from("Playing song at ");
+        play_message.push_str(time_string.as_str());
+        check_msg(msg.channel_id.say(&ctx.http, play_message).await);
     } else {
         check_msg(msg.channel_id.say(&ctx.http, "Not in a voice channel to play in").await);
     }
