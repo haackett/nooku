@@ -33,6 +33,8 @@ use serenity::{
 
 use chrono::*;
 
+use std::fs;
+
 use songbird::tracks::TrackError;
 use songbird::{
     driver::Bitrate,
@@ -323,7 +325,11 @@ async fn nook(ctx: &Context, msg: &Message) -> CommandResult {
     if let Some(handler_lock) = manager.get(guild_id) {
         let mut handler = handler_lock.lock().await;
 
-        let source = match songbird::input::restartable::Restartable::ffmpeg("songs/032 - Animal Crossing New Leaf (3DS) - 6 PM.flac", false).await {
+        for file in fs::read_dir("songs/").unwrap() {
+            println!("{}", file.unwrap().path().display());
+        }
+
+        let source = match songbird::input::restartable::Restartable::ffmpeg("songs/019_7PM.flac", false).await {
             Ok(source) => source,
             Err(why) => {
                 println!("Err starting source: {:?}", why);
