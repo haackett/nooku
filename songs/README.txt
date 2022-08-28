@@ -1,0 +1,1 @@
+This is the folder where you will put all of your media files. Naming convention not yet decided.

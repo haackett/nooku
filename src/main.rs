@@ -41,7 +41,7 @@ impl EventHandler for Handler {
 }
 
 #[group]
-#[commands(deafen, join, leave, mute, play, ping, undeafen, unmute)]
+#[commands(deafen, join, leave, mute, play, ping, undeafen, unmute, nook)]
 struct General;
 
 #[tokio::main]
@@ -287,6 +287,40 @@ async fn unmute(ctx: &Context, msg: &Message) -> CommandResult {
         check_msg(msg.channel_id.say(&ctx.http, "Unmuted").await);
     } else {
         check_msg(msg.channel_id.say(&ctx.http, "Not in a voice channel to unmute in").await);
+    }
+
+    Ok(())
+}
+
+#[command]
+#[only_in(guilds)]
+async fn nook(ctx: &Context, msg: &Message) -> CommandResult {
+
+    let guild = msg.guild(&ctx.cache).unwrap();
+    let guild_id = guild.id;
+
+    let manager = songbird::get(ctx).await
+        .expect("Songbird Voice client placed in at initialisation.").clone();
+
+    if let Some(handler_lock) = manager.get(guild_id) {
+        let mut handler = handler_lock.lock().await;
+
+        let source = match songbird::ffmpeg("/home/megu/Programming/Rust/nooku/songs/016 - Animal Crossing New Leaf (3DS) - 2 AM.ogg").await {
+            Ok(source) => source,
+            Err(why) => {
+                println!("Err starting source: {:?}", why);
+
+                check_msg(msg.channel_id.say(&ctx.http, "Error sourcing ffmpeg").await);
+
+                return Ok(());
+            },
+        };
+
+        handler.play_source(source);
+
+        check_msg(msg.channel_id.say(&ctx.http, "Playing song").await);
+    } else {
+        check_msg(msg.channel_id.say(&ctx.http, "Not in a voice channel to play in").await);
     }
 
     Ok(())
