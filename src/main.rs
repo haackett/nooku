@@ -468,7 +468,7 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
             .get(&key)
             .expect("Handle placed into cache at startup.");
 
-        let song = handler.play_source(source.into());
+        let song = handler.play_only_source(source.into());
         let _ = song.set_volume(1.0);
         let _ = song.enable_loop();
     } else {
