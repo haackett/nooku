@@ -8,6 +8,7 @@
 //! ```
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::{env, fs};
 
@@ -75,11 +76,56 @@ impl From<&CachedSound> for Input {
     }
 }
 
-struct SoundStore;
+struct SongMap;
 
-impl TypeMapKey for SoundStore {
-    type Value = Arc<Mutex<HashMap<String, CachedSound>>>;
+impl TypeMapKey for SongMap {
+    type Value = Arc<Mutex<HashMap<String, PathBuf>>>;
 }
+
+struct SongCache;
+
+impl TypeMapKey for SongCache {
+    type Value = Arc<Mutex<Vec<CachedSound>>>;
+}
+
+struct TimeToKey;
+
+impl TimeToKey {
+    fn current_hour(&self) -> String {
+        let hour = Local::now().hour();
+        let mut key = String::new();
+        key.push('0');
+        if hour < 10 {
+            key.push('0');
+            key.push_str(hour.to_string().as_str());
+        } else {
+            key.push_str(hour.to_string().as_str());
+        }
+        key
+    }
+    //NEED BETTER IMPLEMENTATION OF THIS FUNCTION
+    fn songs_to_cache(&self) -> (String, String) {
+        let hour = Local::now().hour();
+        let next_hour = hour + 1;
+        let mut to_cache = (String::new(), String::new());
+        to_cache.0.push('0');
+        to_cache.1.push('0');
+        if hour < 10 {
+            to_cache.0.push('0');
+            to_cache.0.push_str(hour.to_string().as_str());
+        } else {
+            to_cache.0.push_str(hour.to_string().as_str());
+        }
+        if next_hour < 10 {
+            to_cache.1.push('0');
+            to_cache.1.push_str(next_hour.to_string().as_str());
+        } else {
+            to_cache.1.push_str(next_hour.to_string().as_str());
+        }
+        to_cache
+    }
+}
+
 #[group]
 #[commands(deafen, join, leave, mute, ping, undeafen, unmute, nook, play)]
 struct General;
@@ -109,50 +155,53 @@ async fn main() {
     {
         let mut data = client.data.write().await;
 
-        let mut audio_map = HashMap::new();
+        let mut song_map = HashMap::new();
 
         for file in fs::read_dir(SONG_PATH).unwrap() {
-            let file_path = file.unwrap().path().display().to_string();
-            let file_key = &file_path[SONG_PATH.chars().count()..SONG_PATH.chars().count() + 3];
+            let file_path = file.unwrap().path();
+            let file_path_str = file_path.display().to_string();
+            let file_key = &file_path_str[SONG_PATH.chars().count()..SONG_PATH.chars().count() + 3];
             match file_key {
                 "REA" => {}
                 _ => {
-                    let cached_song = Compressed::new(
-                        input::ffmpeg(&file_path)
-                            .await
-                            .expect("File should be in songs folder."),
-                        Bitrate::BitsPerSecond(128_000),
-                    )
-                    .expect("These parameters are well-defined.");
-                    let _ = cached_song.raw.spawn_loader();
-                    audio_map.insert(String::from(file_key), CachedSound::Compressed(cached_song));
+                    song_map.insert(String::from(file_key), file_path);
                 }
             }
         }
 
-        println!("{:?}", audio_map.keys());
-        println!("{} songs", audio_map.len());
-        data.insert::<SoundStore>(Arc::new(Mutex::new(audio_map)));
+        let songs_to_cache = TimeToKey.songs_to_cache();
+
+        let mut song_cache = vec![];
+
+        let cached_song = Compressed::new(
+            input::ffmpeg(song_map.get(&songs_to_cache.0).unwrap())
+                .await
+                .expect("File should be in songs folder."),
+            Bitrate::BitsPerSecond(128_000),
+        )
+        .expect("These parameters are well-defined.");
+        let _ = cached_song.raw.spawn_loader();
+        song_cache.push(CachedSound::Compressed(cached_song));
+
+        let cached_song = Compressed::new(
+            input::ffmpeg(song_map.get(&songs_to_cache.1).unwrap())
+                .await
+                .expect("File should be in songs folder."),
+            Bitrate::BitsPerSecond(128_000),
+        )
+        .expect("These parameters are well-defined.");
+        let _ = cached_song.raw.spawn_loader();
+        song_cache.push(CachedSound::Compressed(cached_song));
+
+        println!("{:?}", song_map);
+        println!("{} songs", song_map.len());
+        data.insert::<SongMap>(Arc::new(Mutex::new(song_map)));
     }
 
     let _ = client
         .start()
         .await
         .map_err(|why| println!("Client ended: {:?}", why));
-}
-
-//finds the hashmap key for the current hour
-fn time_to_key() -> String {
-    let hour = Local::now().hour();
-    let mut key = String::new();
-    key.push('0');
-    if hour < 10 {
-        key.push('0');
-        key.push_str(hour.to_string().as_str());
-    } else {
-        key.push_str(hour.to_string().as_str());
-    }
-    key
 }
 
 #[command]
@@ -453,20 +502,18 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
                 .await,
         );
 
-        let key = time_to_key();
+        let key = TimeToKey.current_hour();
 
         let sources_lock = ctx
             .data
             .read()
             .await
-            .get::<SoundStore>()
+            .get::<SongCache>()
             .cloned()
             .expect("Sound cache was installed at startup.");
         let sources_lock_for_evt = sources_lock.clone();
         let sources = sources_lock.lock().await;
-        let source = sources
-            .get(&key)
-            .expect("Handle placed into cache at startup.");
+        let source = sources.remove(0);
 
         let song = handler.play_only_source(source.into());
         let _ = song.set_volume(1.0);
