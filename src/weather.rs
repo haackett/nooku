@@ -16,9 +16,9 @@ pub enum Weather {
 impl Weather {
     pub fn from_str(s: &str) -> Self {
         match s {
-            "Clear" => Weather::Clear,
-            "Raining" => Weather::Rainy,
-            "Snowing" => Weather::Snowy,
+            "\"Clear\"" => Weather::Clear,
+            "\"Raining\"" => Weather::Rainy,
+            "\"Snowing\"" => Weather::Snowy,
             _ => Weather::Unknown,
         }
 
@@ -46,7 +46,7 @@ pub async fn get_weather(loc: Location, api_key: &str) -> Result<Weather, > {
 
     println!("{:#?}", json);
 
-    let weather_string: String = json.get("weather").unwrap()
+    let weather_string = json.get("weather").unwrap()
         .get(0).unwrap()
         .get("main").unwrap().to_string();
 
