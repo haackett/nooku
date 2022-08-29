@@ -193,6 +193,10 @@ async fn main() {
         let _ = cached_song.raw.spawn_loader();
         song_cache.push(CachedSound::Compressed(cached_song));
 
+        println!("Amount of cached songs {}", song_cache.len());
+
+        data.insert::<SongCache>(Arc::new(Mutex::new(song_cache)));
+
         println!("{:?}", song_map);
         println!("{} songs", song_map.len());
         data.insert::<SongMap>(Arc::new(Mutex::new(song_map)));
@@ -512,10 +516,10 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
             .cloned()
             .expect("Sound cache was installed at startup.");
         let sources_lock_for_evt = sources_lock.clone();
-        let sources = sources_lock.lock().await;
+        let mut sources = sources_lock.lock().await;
         let source = sources.remove(0);
 
-        let song = handler.play_only_source(source.into());
+        let song = handler.play_only_source((&source).into());
         let _ = song.set_volume(1.0);
         let _ = song.enable_loop();
     } else {
