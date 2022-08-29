@@ -53,11 +53,7 @@ struct Handler;
 #[async_trait]
 impl EventHandler for Handler {
     async fn ready(&self, _: Context, ready: Ready) {
-        println!(
-            "{} is connected at {}!",
-            ready.user.name,
-            Local::now().to_string()
-        );
+        println!("{} is connected at {}!", ready.user.name, Local::now());
     }
 }
 
@@ -88,6 +84,8 @@ impl TypeMapKey for SoundStore {
 #[commands(deafen, join, leave, mute, ping, undeafen, unmute, nook, play)]
 struct General;
 
+const SONG_PATH: &str = "songs/";
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
@@ -113,21 +111,21 @@ async fn main() {
 
         let mut audio_map = HashMap::new();
 
-        for file in fs::read_dir("songs/").unwrap() {
+        for file in fs::read_dir(SONG_PATH).unwrap() {
             let file_path = file.unwrap().path().display().to_string();
-            match file_path.as_str() {
-                "songs/README.txt" => {}
+            let file_key = &file_path[SONG_PATH.chars().count()..SONG_PATH.chars().count() + 3];
+            match file_key {
+                "REA" => {}
                 _ => {
                     let cached_song = Compressed::new(
                         input::ffmpeg(&file_path)
                             .await
-                            .expect("File should be in song folder."),
-                            Bitrate::BitsPerSecond(128_000),
+                            .expect("File should be in songs folder."),
+                        Bitrate::BitsPerSecond(128_000),
                     )
                     .expect("These parameters are well-defined.");
                     let _ = cached_song.raw.spawn_loader();
-                    let key = &file_path[6..9];
-                    audio_map.insert(String::from(key), CachedSound::Compressed(cached_song));
+                    audio_map.insert(String::from(file_key), CachedSound::Compressed(cached_song));
                 }
             }
         }
@@ -144,14 +142,14 @@ async fn main() {
 }
 
 //finds the hashmap key for the current hour
-fn find_key() -> String {
+fn time_to_key() -> String {
     let hour = Local::now().hour();
     let mut key = String::new();
     key.push('0');
     if hour < 10 {
         key.push('0');
         key.push_str(hour.to_string().as_str());
-    } else{
+    } else {
         key.push_str(hour.to_string().as_str());
     }
     key
@@ -448,20 +446,14 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
         let mut handler = handler_lock.lock().await;
         check_msg(
             msg.channel_id
-                .say(&ctx.http, &format!("Joined {}", connect_to.mention()))
+                .say(
+                    &ctx.http,
+                    &format!("Joined {} at {}", connect_to.mention(), Local::now()),
+                )
                 .await,
         );
 
-        let hour = Local::now().hour();
-        let mut key = String::new();
-        key.push('0');
-        if hour < 10 {
-            key.push('0');
-            key.push_str(hour.to_string().as_str());
-        } else{
-            key.push_str(hour.to_string().as_str());
-        }
-
+        let key = time_to_key();
 
         let sources_lock = ctx
             .data
@@ -472,7 +464,9 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
             .expect("Sound cache was installed at startup.");
         let sources_lock_for_evt = sources_lock.clone();
         let sources = sources_lock.lock().await;
-        let source = sources.get(&key).expect("Handle placed into cache at startup.");
+        let source = sources
+            .get(&key)
+            .expect("Handle placed into cache at startup.");
 
         let song = handler.play_source(source.into());
         let _ = song.set_volume(1.0);
