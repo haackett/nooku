@@ -112,20 +112,22 @@ async fn main() {
         let mut data = client.data.write().await;
 
         let mut audio_map = HashMap::new();
+
         for file in fs::read_dir("songs/").unwrap() {
             let file_path = file.unwrap().path().display().to_string();
             match file_path.as_str() {
                 "songs/README.txt" => {}
                 _ => {
-                    let cached_song = Memory::new(
+                    let cached_song = Compressed::new(
                         input::ffmpeg(&file_path)
                             .await
-                            .expect("File should be in root folder."),
+                            .expect("File should be in song folder."),
+                            Bitrate::BitsPerSecond(128_000),
                     )
                     .expect("These parameters are well-defined.");
                     let _ = cached_song.raw.spawn_loader();
                     let key = &file_path[6..9];
-                    audio_map.insert(String::from(key), CachedSound::Uncompressed(cached_song));
+                    audio_map.insert(String::from(key), CachedSound::Compressed(cached_song));
                 }
             }
         }
@@ -139,6 +141,20 @@ async fn main() {
         .start()
         .await
         .map_err(|why| println!("Client ended: {:?}", why));
+}
+
+//finds the hashmap key for the current hour
+fn find_key() -> String {
+    let hour = Local::now().hour();
+    let mut key = String::new();
+    key.push('0');
+    if hour < 10 {
+        key.push('0');
+        key.push_str(hour.to_string().as_str());
+    } else{
+        key.push_str(hour.to_string().as_str());
+    }
+    key
 }
 
 #[command]
