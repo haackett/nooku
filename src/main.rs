@@ -38,6 +38,7 @@ use serenity::{
 
 use chrono::*;
 
+use songbird::input::cached;
 use songbird::tracks::TrackError;
 use songbird::{
     driver::Bitrate,
@@ -85,7 +86,7 @@ impl TypeMapKey for SongMap {
 struct SongCache;
 
 impl TypeMapKey for SongCache {
-    type Value = Arc<Mutex<Vec<CachedSound>>>;
+    type Value = Arc<Mutex<Vec<Compressed>>>;
 }
 
 struct TimeToKey;
@@ -125,6 +126,18 @@ impl TimeToKey {
     fn songs_to_cache(&self) -> (String, String) {
         (self.current_hour(), self.next_hour())
     }
+}
+
+async fn compress_song(file_path: &PathBuf) -> Compressed {
+    let cached_song = Compressed::new(
+        input::ffmpeg(file_path)
+            .await
+            .expect("File should be in songs folder."),
+        Bitrate::BitsPerSecond(128_000),
+    )
+    .expect("These parameters are well-defined.");
+    let _ = cached_song.raw.spawn_loader();
+    cached_song
 }
 
 #[group]
@@ -170,37 +183,21 @@ async fn main() {
             }
         }
 
-        let songs_to_cache = TimeToKey.songs_to_cache();
+        println!("{:?}", song_map);
+        println!("{} songs", song_map.len());
 
         let mut song_cache = vec![];
 
-        let cached_song = Compressed::new(
-            input::ffmpeg(song_map.get(&songs_to_cache.0).unwrap())
-                .await
-                .expect("File should be in songs folder."),
-            Bitrate::BitsPerSecond(128_000),
-        )
-        .expect("These parameters are well-defined.");
-        let _ = cached_song.raw.spawn_loader();
-        song_cache.push(CachedSound::Compressed(cached_song));
+        let songs_to_cache = TimeToKey.songs_to_cache();
 
-        let cached_song = Compressed::new(
-            input::ffmpeg(song_map.get(&songs_to_cache.1).unwrap())
-                .await
-                .expect("File should be in songs folder."),
-            Bitrate::BitsPerSecond(128_000),
-        )
-        .expect("These parameters are well-defined.");
-        let _ = cached_song.raw.spawn_loader();
-        song_cache.push(CachedSound::Compressed(cached_song));
+        song_cache.push(compress_song(song_map.get(&songs_to_cache.0).unwrap()).await);
+
+        song_cache.push(compress_song(song_map.get(&songs_to_cache.1).unwrap()).await);
 
         println!("Amount of cached songs {}", song_cache.len());
 
-        data.insert::<SongCache>(Arc::new(Mutex::new(song_cache)));
-
-        println!("{:?}", song_map);
-        println!("{} songs", song_map.len());
         data.insert::<SongMap>(Arc::new(Mutex::new(song_map)));
+        data.insert::<SongCache>(Arc::new(Mutex::new(song_cache)));
     }
 
     let _ = client
@@ -262,7 +259,7 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
         let mut sources = sources_lock.lock().await;
         let source = sources.remove(0);
 
-        let song = handler.play_only_source((&source).into());
+        let song = handler.play_only_source(source.into());
         let _ = song.set_volume(1.0);
         let _ = song.enable_loop();
     } else {
