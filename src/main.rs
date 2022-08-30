@@ -103,26 +103,27 @@ impl TimeToKey {
         }
         key
     }
+
+    fn next_hour(&self) -> String {
+        let mut hour = Local::now().hour();
+        if hour == 23 {
+            hour = 0;
+        } else {
+            hour += 1;
+        }
+        let mut key = String::new();
+        key.push('0');
+        if hour < 10 {
+            key.push('0');
+            key.push_str(hour.to_string().as_str());
+        } else {
+            key.push_str(hour.to_string().as_str());
+        }
+        key
+    }
     //NEED BETTER IMPLEMENTATION OF THIS FUNCTION
     fn songs_to_cache(&self) -> (String, String) {
-        let hour = Local::now().hour();
-        let next_hour = hour + 1;
-        let mut to_cache = (String::new(), String::new());
-        to_cache.0.push('0');
-        to_cache.1.push('0');
-        if hour < 10 {
-            to_cache.0.push('0');
-            to_cache.0.push_str(hour.to_string().as_str());
-        } else {
-            to_cache.0.push_str(hour.to_string().as_str());
-        }
-        if next_hour < 10 {
-            to_cache.1.push('0');
-            to_cache.1.push_str(next_hour.to_string().as_str());
-        } else {
-            to_cache.1.push_str(next_hour.to_string().as_str());
-        }
-        to_cache
+        (self.current_hour(), self.next_hour())
     }
 }
 
@@ -206,6 +207,73 @@ async fn main() {
         .start()
         .await
         .map_err(|why| println!("Client ended: {:?}", why));
+}
+
+#[command]
+#[only_in(guilds)]
+async fn play(ctx: &Context, msg: &Message) -> CommandResult {
+    let guild = msg.guild(&ctx.cache).unwrap();
+    let guild_id = guild.id;
+
+    let channel_id = guild
+        .voice_states
+        .get(&msg.author.id)
+        .and_then(|voice_state| voice_state.channel_id);
+
+    let connect_to = match channel_id {
+        Some(channel) => channel,
+        None => {
+            check_msg(msg.reply(ctx, "Not in a voice channel").await);
+
+            return Ok(());
+        }
+    };
+
+    let manager = songbird::get(ctx)
+        .await
+        .expect("Songbird Voice client placed in at initialisation.")
+        .clone();
+
+    let (handler_lock, success_reader) = manager.join(guild_id, connect_to).await;
+
+    let call_lock_for_evt = Arc::downgrade(&handler_lock);
+
+    if let Ok(_reader) = success_reader {
+        let mut handler = handler_lock.lock().await;
+        check_msg(
+            msg.channel_id
+                .say(
+                    &ctx.http,
+                    &format!("Joined {} at {}", connect_to.mention(), Local::now()),
+                )
+                .await,
+        );
+
+        let key = TimeToKey.current_hour();
+
+        let sources_lock = ctx
+            .data
+            .read()
+            .await
+            .get::<SongCache>()
+            .cloned()
+            .expect("Sound cache was installed at startup.");
+        let sources_lock_for_evt = sources_lock.clone();
+        let mut sources = sources_lock.lock().await;
+        let source = sources.remove(0);
+
+        let song = handler.play_only_source((&source).into());
+        let _ = song.set_volume(1.0);
+        let _ = song.enable_loop();
+    } else {
+        check_msg(
+            msg.channel_id
+                .say(&ctx.http, "Error joining the channel")
+                .await,
+        );
+    }
+
+    Ok(())
 }
 
 #[command]
@@ -459,73 +527,6 @@ async fn nook(ctx: &Context, msg: &Message) -> CommandResult {
         check_msg(
             msg.channel_id
                 .say(&ctx.http, "Not in a voice channel to play in")
-                .await,
-        );
-    }
-
-    Ok(())
-}
-
-#[command]
-#[only_in(guilds)]
-async fn play(ctx: &Context, msg: &Message) -> CommandResult {
-    let guild = msg.guild(&ctx.cache).unwrap();
-    let guild_id = guild.id;
-
-    let channel_id = guild
-        .voice_states
-        .get(&msg.author.id)
-        .and_then(|voice_state| voice_state.channel_id);
-
-    let connect_to = match channel_id {
-        Some(channel) => channel,
-        None => {
-            check_msg(msg.reply(ctx, "Not in a voice channel").await);
-
-            return Ok(());
-        }
-    };
-
-    let manager = songbird::get(ctx)
-        .await
-        .expect("Songbird Voice client placed in at initialisation.")
-        .clone();
-
-    let (handler_lock, success_reader) = manager.join(guild_id, connect_to).await;
-
-    let call_lock_for_evt = Arc::downgrade(&handler_lock);
-
-    if let Ok(_reader) = success_reader {
-        let mut handler = handler_lock.lock().await;
-        check_msg(
-            msg.channel_id
-                .say(
-                    &ctx.http,
-                    &format!("Joined {} at {}", connect_to.mention(), Local::now()),
-                )
-                .await,
-        );
-
-        let key = TimeToKey.current_hour();
-
-        let sources_lock = ctx
-            .data
-            .read()
-            .await
-            .get::<SongCache>()
-            .cloned()
-            .expect("Sound cache was installed at startup.");
-        let sources_lock_for_evt = sources_lock.clone();
-        let mut sources = sources_lock.lock().await;
-        let source = sources.remove(0);
-
-        let song = handler.play_only_source((&source).into());
-        let _ = song.set_volume(1.0);
-        let _ = song.enable_loop();
-    } else {
-        check_msg(
-            msg.channel_id
-                .say(&ctx.http, "Error joining the channel")
                 .await,
         );
     }
