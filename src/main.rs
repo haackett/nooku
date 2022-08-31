@@ -10,8 +10,9 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::{env, fs};
+use std::{env, fs, vec};
 
+use serenity::futures::TryFutureExt;
 use serenity::prelude::{Mentionable, Mutex, TypeMapKey};
 // This trait adds the `register_songbird` and `register_songbird_with` methods
 // to the client builder below, making it easy to install this voice client.
@@ -86,7 +87,7 @@ impl TypeMapKey for SongMap {
 struct SongCache;
 
 impl TypeMapKey for SongCache {
-    type Value = Arc<Mutex<Vec<Compressed>>>;
+    type Value = Arc<Mutex<Vec<(String, Compressed)>>>;
 }
 
 struct TimeToKey;
@@ -122,10 +123,6 @@ impl TimeToKey {
         }
         key
     }
-    //NEED BETTER IMPLEMENTATION OF THIS FUNCTION
-    fn songs_to_cache(&self) -> (String, String) {
-        (self.current_hour(), self.next_hour())
-    }
 }
 
 async fn compress_song(file_path: &PathBuf) -> Compressed {
@@ -144,6 +141,7 @@ async fn compress_song(file_path: &PathBuf) -> Compressed {
 #[commands(deafen, join, leave, mute, ping, undeafen, unmute, nook, play)]
 struct General;
 
+//Todo: Consider making a config file to allow the changing of directory name.
 const SONG_PATH: &str = "songs/";
 
 #[tokio::main]
@@ -188,11 +186,14 @@ async fn main() {
 
         let mut song_cache = vec![];
 
-        let songs_to_cache = TimeToKey.songs_to_cache();
+        let song_to_cache = TimeToKey.current_hour();
 
-        song_cache.push(compress_song(song_map.get(&songs_to_cache.0).unwrap()).await);
+        let cached_path = song_map.get(&song_to_cache).unwrap();
+        let cached_song = compress_song(cached_path).await;
 
-        song_cache.push(compress_song(song_map.get(&songs_to_cache.1).unwrap()).await);
+        song_cache.push((song_to_cache, cached_song));
+
+        //song_cache.push(compress_song(song_map.get(&songs_to_cache.1).unwrap()).await);
 
         println!("Amount of cached songs {}", song_cache.len());
 
@@ -248,20 +249,61 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
 
         let key = TimeToKey.current_hour();
 
-        let sources_lock = ctx
+        let vec_sources_lock = ctx
             .data
             .read()
             .await
             .get::<SongCache>()
             .cloned()
             .expect("Sound cache was installed at startup.");
-        let sources_lock_for_evt = sources_lock.clone();
-        let mut sources = sources_lock.lock().await;
-        let source = sources.remove(0);
+        let vec_sources_lock_for_evt = vec_sources_lock.clone();
+        let mut vec_sources = vec_sources_lock.lock().await;
+        let vec_source = vec_sources.remove(0);
 
-        let song = handler.play_only_source(source.into());
-        let _ = song.set_volume(1.0);
-        let _ = song.enable_loop();
+        let hash_sources_lock = ctx
+            .data
+            .read()
+            .await
+            .get::<SongMap>()
+            .cloned()
+            .expect("Sound cache was installed at startup.");
+        let hash_sources_lock_for_evt = hash_sources_lock.clone();
+        let mut hash_sources = hash_sources_lock.lock().await;
+        let hash_source = hash_sources;
+
+        //Refactor and replace with match statement?
+        if vec_source.0 != key {
+            vec_sources.remove(0);
+            if vec_sources.is_empty() {
+                let this_hour_compressed = compress_song(hash_source.get(&key).unwrap()).await;
+                vec_sources.push((key, this_hour_compressed));
+            } else {
+                let source_fix = vec_sources.remove(0);
+                let source_clone = source_fix.1.clone();
+                let song = handler.play_only_source(source_clone.into());
+                let _ = song.set_volume(1.0);
+                let _ = song.enable_loop();
+
+                vec_sources.push(source_fix);
+            }
+        } else {
+            let source_clone = vec_source.1.clone();
+            let song = handler.play_only_source(source_clone.into());
+            let _ = song.set_volume(1.0);
+            let _ = song.enable_loop();
+
+            vec_sources.push(vec_source);
+        }
+
+        if vec_sources.len() == 1 {
+            let next_hour_key = TimeToKey.next_hour();
+            let next_hour_compressed =
+                compress_song(hash_source.get(&next_hour_key).unwrap()).await;
+            vec_sources.push((next_hour_key, next_hour_compressed));
+
+            println!("cache contents: {:?}", vec_sources);
+            println!("cache size: {:?}", vec_sources.len());
+        }
     } else {
         check_msg(
             msg.channel_id
