@@ -138,7 +138,7 @@ async fn compress_song(file_path: &PathBuf) -> Compressed {
 }
 
 #[group]
-#[commands(deafen, join, leave, mute, ping, undeafen, unmute, nook, play)]
+#[commands(deafen, join, leave, mute, ping, undeafen, unmute, play)]
 struct General;
 
 //Todo: Consider making a config file to allow the changing of directory name.
