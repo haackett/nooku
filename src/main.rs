@@ -516,54 +516,6 @@ async fn unmute(ctx: &Context, msg: &Message) -> CommandResult {
     Ok(())
 }
 
-//Function for testing how to loop media playback from local storage
-#[command]
-#[only_in(guilds)]
-async fn nook(ctx: &Context, msg: &Message) -> CommandResult {
-    let guild = msg.guild(&ctx.cache).unwrap();
-    let guild_id = guild.id;
-
-    let manager = songbird::get(ctx)
-        .await
-        .expect("Songbird Voice client placed in at initialisation.")
-        .clone();
-
-    if let Some(handler_lock) = manager.get(guild_id) {
-        let mut handler = handler_lock.lock().await;
-
-        let source =
-            match songbird::input::restartable::Restartable::ffmpeg("songs/020_8PM.flac", false)
-                .await
-            {
-                Ok(source) => source,
-                Err(why) => {
-                    println!("Err starting source: {:?}", why);
-
-                    check_msg(msg.channel_id.say(&ctx.http, "Error sourcing ffmpeg").await);
-
-                    return Ok(());
-                }
-            };
-
-        let song = handler.play_source(source.into());
-        let _ = song.enable_loop();
-
-        let local_time: DateTime<Local> = Local::now();
-        let time_string = local_time.to_string();
-        let mut play_message = String::from("Playing song at ");
-        play_message.push_str(time_string.as_str());
-        check_msg(msg.channel_id.say(&ctx.http, play_message).await);
-    } else {
-        check_msg(
-            msg.channel_id
-                .say(&ctx.http, "Not in a voice channel to play in")
-                .await,
-        );
-    }
-
-    Ok(())
-}
-
 /// Checks that a message successfully sent; if not, then logs why to stdout.
 fn check_msg(result: SerenityResult<Message>) {
     if let Err(why) = result {
