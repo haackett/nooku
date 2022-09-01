@@ -271,29 +271,20 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
         let mut hash_sources = hash_sources_lock.lock().await;
         let hash_source = hash_sources;
 
-        //Refactor and replace with match statement?
+        //Refactor and replace with match statement? May be edge case if the order somehow gets messed up. Look into ensuring this cannot happen
         if vec_source.0 != key {
             vec_sources.remove(0);
             if vec_sources.is_empty() {
                 let this_hour_compressed = compress_song(hash_source.get(&key).unwrap()).await;
                 vec_sources.push((key, this_hour_compressed));
-            } else {
-                let source_fix = vec_sources.remove(0);
-                let source_clone = source_fix.1.clone();
-                let song = handler.play_only_source(source_clone.into());
-                let _ = song.set_volume(1.0);
-                let _ = song.enable_loop();
-
-                vec_sources.insert(0, source_fix);
             }
-        } else {
-            let source_clone = vec_source.1.clone();
-            let song = handler.play_only_source(source_clone.into());
-            let _ = song.set_volume(1.0);
-            let _ = song.enable_loop();
-
-            vec_sources.insert(0, vec_source);
         }
+        let source_clone = vec_source.1.clone();
+        let song = handler.play_only_source(source_clone.into());
+        let _ = song.set_volume(1.0);
+        let _ = song.enable_loop();
+
+        vec_sources.insert(0, vec_source);
 
         if vec_sources.len() == 1 {
             let next_hour_key = TimeToKey.next_hour();
