@@ -284,7 +284,7 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
                 let _ = song.set_volume(1.0);
                 let _ = song.enable_loop();
 
-                vec_sources.push(source_fix);
+                vec_sources.insert(0, source_fix);
             }
         } else {
             let source_clone = vec_source.1.clone();
@@ -292,7 +292,7 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
             let _ = song.set_volume(1.0);
             let _ = song.enable_loop();
 
-            vec_sources.push(vec_source);
+            vec_sources.insert(0, vec_source);
         }
 
         if vec_sources.len() == 1 {
