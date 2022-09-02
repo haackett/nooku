@@ -354,15 +354,6 @@ struct HourChange {
 #[async_trait]
 impl VoiceEventHandler for HourChange {
     async fn act(&self, _ctx: &EventContext<'_>) -> Option<Event> {
-        check_msg(
-            self.chan_id
-                .say(
-                    &self.http,
-                    &format!("It is now {} o' clock!", Local::now().hour()),
-                )
-                .await,
-        );
-
         if let Some(call_lock) = self.call_lock.upgrade() {
             let hash_source = self.hash_sources.lock().await;
 
@@ -384,6 +375,14 @@ impl VoiceEventHandler for HourChange {
             println!("cache contents: {:?}", vec_sources);
             println!("cache size: {:?}", vec_sources.len());
         }
+        check_msg(
+            self.chan_id
+                .say(
+                    &self.http,
+                    &format!("It is now {} o' clock!", Local::now().hour()),
+                )
+                .await,
+        );
         None
     }
 }
