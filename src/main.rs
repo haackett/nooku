@@ -9,10 +9,13 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::{env, fs, vec};
 
 use serenity::futures::TryFutureExt;
+use serenity::http::Http;
+use serenity::model::id::ChannelId;
 use serenity::prelude::{Mentionable, Mutex, TypeMapKey};
 // This trait adds the `register_songbird` and `register_songbird_with` methods
 // to the client builder below, making it easy to install this voice client.
@@ -295,6 +298,30 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
             println!("cache contents: {:?}", vec_sources);
             println!("cache size: {:?}", vec_sources.len());
         }
+
+        let chan_id = msg.channel_id;
+
+        let send_http = ctx.http.clone();
+
+        let now = Local::now();
+
+        let next_hour = now.date().and_hms(now.hour() + 1, 0, 0);
+
+        let time_to_top_hour = next_hour.signed_duration_since(now).to_std().unwrap();
+
+        println!(
+            "next hour: {} \ntime to next hour: {:?}",
+            next_hour, time_to_top_hour
+        );
+
+        handler.add_global_event(
+            Event::Periodic(Duration::hours(1).to_std().unwrap(), Some(time_to_top_hour)),
+            ChannelDurationNotifier {
+                chan_id,
+                count: Default::default(),
+                http: send_http,
+            },
+        );
     } else {
         check_msg(
             msg.channel_id
@@ -304,6 +331,32 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
     }
 
     Ok(())
+}
+
+struct ChannelDurationNotifier {
+    chan_id: ChannelId,
+    count: Arc<AtomicUsize>,
+    http: Arc<Http>,
+}
+
+#[async_trait]
+impl VoiceEventHandler for ChannelDurationNotifier {
+    async fn act(&self, _ctx: &EventContext<'_>) -> Option<Event> {
+        let count_before = self.count.fetch_add(0, Ordering::Relaxed);
+        check_msg(
+            self.chan_id
+                .say(
+                    &self.http,
+                    &format!(
+                        "I've been in this channel for {} minutes!",
+                        count_before + 0
+                    ),
+                )
+                .await,
+        );
+
+        None
+    }
 }
 
 #[command]
