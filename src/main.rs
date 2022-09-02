@@ -13,6 +13,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::{env, fs, vec};
 
+use serenity::futures::lock::MutexGuard;
 use serenity::futures::TryFutureExt;
 use serenity::http::Http;
 use serenity::model::id::ChannelId;
@@ -314,11 +315,11 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
             next_hour, time_to_top_hour
         );
 
-        handler.add_global_event(
+        song.add_event(
             Event::Periodic(Duration::hours(1).to_std().unwrap(), Some(time_to_top_hour)),
-            ChannelDurationNotifier {
+            HourChange {
                 chan_id,
-                count: Default::default(),
+                //handler: &handler,
                 http: send_http,
             },
         );
@@ -333,28 +334,26 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
     Ok(())
 }
 
-struct ChannelDurationNotifier {
+struct HourChange {
     chan_id: ChannelId,
-    count: Arc<AtomicUsize>,
+    //handler: MutexGuard<Call>,
     http: Arc<Http>,
 }
 
 #[async_trait]
-impl VoiceEventHandler for ChannelDurationNotifier {
-    async fn act(&self, _ctx: &EventContext<'_>) -> Option<Event> {
-        let count_before = self.count.fetch_add(0, Ordering::Relaxed);
+impl VoiceEventHandler for HourChange {
+    async fn act(&self, ctx: &EventContext<'_>) -> Option<Event> {
         check_msg(
             self.chan_id
                 .say(
                     &self.http,
-                    &format!(
-                        "I've been in this channel for {} minutes!",
-                        count_before + 0
-                    ),
+                    &format!("It is now {} o' clock!", Local::now().hour()),
                 )
                 .await,
         );
-
+        if let EventContext::Track(&[(_state, track)]) = ctx {
+            let _ = track.disable_loop();
+        }
         None
     }
 }
