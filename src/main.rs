@@ -294,9 +294,6 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
             let next_hour_compressed =
                 compress_song(hash_source.get(&next_hour_key).unwrap()).await;
             vec_sources.push((next_hour_key, next_hour_compressed));
-
-            println!("cache contents: {:?}", vec_sources);
-            println!("cache size: {:?}", vec_sources.len());
         }
 
         let chan_id = msg.channel_id;
@@ -305,7 +302,8 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
 
         let now = Local::now();
 
-        let next_hour = now.date().and_hms(now.hour() + 1, 0, 0);
+        //Errors would occur from the event firing before local time changed. 1 Second added to try to prevent this.
+        let next_hour = now.date().and_hms(now.hour() + 1, 0, 1);
 
         let time_to_top_hour = next_hour.signed_duration_since(now).to_std().unwrap();
 
@@ -354,27 +352,6 @@ struct HourChange {
 #[async_trait]
 impl VoiceEventHandler for HourChange {
     async fn act(&self, _ctx: &EventContext<'_>) -> Option<Event> {
-        if let Some(call_lock) = self.call_lock.upgrade() {
-            let hash_source = self.hash_sources.lock().await;
-
-            let mut vec_sources = self.vec_sources.lock().await;
-
-            let src = vec_sources.remove(0);
-
-            let mut handler = call_lock.lock().await;
-            let src_clone = src.1.clone();
-            let song = handler.play_only_source(src_clone.into());
-            let _ = song.set_volume(1.0);
-            let _ = song.enable_loop();
-
-            let current_hour_key = TimeToKey.current_hour();
-            let current_hour_compressed =
-                compress_song(hash_source.get(&current_hour_key).unwrap()).await;
-            vec_sources.push((current_hour_key, current_hour_compressed));
-
-            println!("cache contents: {:?}", vec_sources);
-            println!("cache size: {:?}", vec_sources.len());
-        }
         check_msg(
             self.chan_id
                 .say(
@@ -383,6 +360,40 @@ impl VoiceEventHandler for HourChange {
                 )
                 .await,
         );
+        if let Some(call_lock) = self.call_lock.upgrade() {
+            let hash_source = self.hash_sources.lock().await;
+
+            let mut vec_sources = self.vec_sources.lock().await;
+
+            let mut src = vec_sources.remove(0);
+
+            let current_hour_key = TimeToKey.current_hour();
+
+            println!("Current hour key: {}", current_hour_key);
+
+            if current_hour_key != src.0 {
+                let current_hour_compressed =
+                    compress_song(hash_source.get(&current_hour_key).unwrap()).await;
+                src = (current_hour_key, current_hour_compressed);
+            }
+
+            let mut handler = call_lock.lock().await;
+            let src_clone = src.1.clone();
+            let song = handler.play_only_source(src_clone.into());
+            let _ = song.set_volume(1.0);
+            let _ = song.enable_loop();
+
+            if vec_sources.len() == 0 {
+                let next_hour_key = TimeToKey.next_hour();
+                let next_hour_compressed =
+                    compress_song(hash_source.get(&next_hour_key).unwrap()).await;
+                vec_sources.push((next_hour_key, next_hour_compressed));
+            }
+
+            println!("cache contents: {:?}", vec_sources);
+            println!("cache size: {:?}", vec_sources.len());
+        }
+
         None
     }
 }
