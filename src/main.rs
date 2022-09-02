@@ -9,10 +9,14 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Weak};
 use std::{env, fs, vec};
 
+use serenity::futures::lock::MutexGuard;
 use serenity::futures::TryFutureExt;
+use serenity::http::Http;
+use serenity::model::id::ChannelId;
 use serenity::prelude::{Mentionable, Mutex, TypeMapKey};
 // This trait adds the `register_songbird` and `register_songbird_with` methods
 // to the client builder below, making it easy to install this voice client.
@@ -247,8 +251,6 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
                 .await,
         );
 
-        let key = TimeToKey.current_hour();
-
         let vec_sources_lock = ctx
             .data
             .read()
@@ -258,7 +260,6 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
             .expect("Sound cache was installed at startup.");
         let vec_sources_lock_for_evt = vec_sources_lock.clone();
         let mut vec_sources = vec_sources_lock.lock().await;
-        let vec_source = vec_sources.remove(0);
 
         let hash_sources_lock = ctx
             .data
@@ -268,25 +269,27 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
             .cloned()
             .expect("Sound cache was installed at startup.");
         let hash_sources_lock_for_evt = hash_sources_lock.clone();
-        let mut hash_sources = hash_sources_lock.lock().await;
+        let hash_sources = hash_sources_lock.lock().await;
         let hash_source = hash_sources;
 
+        let mut vec_source = vec_sources.remove(0);
+        let key = TimeToKey.current_hour();
         //Refactor and replace with match statement? May be edge case if the order somehow gets messed up. Look into ensuring this cannot happen
         if vec_source.0 != key {
-            vec_sources.remove(0);
-            if vec_sources.is_empty() {
-                let this_hour_compressed = compress_song(hash_source.get(&key).unwrap()).await;
-                vec_sources.push((key, this_hour_compressed));
+            if vec_sources.len() > 0 {
+                vec_sources.remove(0);
             }
+            let this_hour_compressed = compress_song(hash_source.get(&key).unwrap()).await;
+            vec_source = (key, this_hour_compressed);
         }
         let source_clone = vec_source.1.clone();
         let song = handler.play_only_source(source_clone.into());
         let _ = song.set_volume(1.0);
         let _ = song.enable_loop();
 
-        vec_sources.insert(0, vec_source);
+        //vec_sources.insert(0, vec_source);
 
-        if vec_sources.len() == 1 {
+        if vec_sources.len() == 0 {
             let next_hour_key = TimeToKey.next_hour();
             let next_hour_compressed =
                 compress_song(hash_source.get(&next_hour_key).unwrap()).await;
@@ -295,6 +298,40 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
             println!("cache contents: {:?}", vec_sources);
             println!("cache size: {:?}", vec_sources.len());
         }
+
+        let chan_id = msg.channel_id;
+
+        let send_http = ctx.http.clone();
+
+        let now = Local::now();
+
+        let next_hour = now.date().and_hms(now.hour() + 1, 0, 0);
+
+        let time_to_top_hour = next_hour.signed_duration_since(now).to_std().unwrap();
+
+        println!(
+            "next hour: {} \ntime to next hour: {:?}",
+            next_hour, time_to_top_hour
+        );
+
+        println!("cache contents: {:?}", vec_sources);
+        println!("cache size: {:?}", vec_sources.len());
+
+        handler.add_global_event(
+            Event::Periodic(Duration::hours(1).to_std().unwrap(), Some(time_to_top_hour)),
+            //1 Second duration for testing but current hour will be broken
+            // Event::Periodic(
+            //     Duration::seconds(1).to_std().unwrap(),
+            //     Some(Duration::seconds(1).to_std().unwrap()),
+            // ),
+            HourChange {
+                chan_id,
+                http: send_http,
+                call_lock: call_lock_for_evt,
+                vec_sources: vec_sources_lock_for_evt,
+                hash_sources: hash_sources_lock_for_evt,
+            },
+        );
     } else {
         check_msg(
             msg.channel_id
@@ -304,6 +341,51 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
     }
 
     Ok(())
+}
+
+struct HourChange {
+    chan_id: ChannelId,
+    http: Arc<Http>,
+    call_lock: Weak<Mutex<Call>>,
+    vec_sources: Arc<Mutex<Vec<(String, Compressed)>>>,
+    hash_sources: Arc<Mutex<HashMap<String, PathBuf>>>,
+}
+
+#[async_trait]
+impl VoiceEventHandler for HourChange {
+    async fn act(&self, _ctx: &EventContext<'_>) -> Option<Event> {
+        check_msg(
+            self.chan_id
+                .say(
+                    &self.http,
+                    &format!("It is now {} o' clock!", Local::now().hour()),
+                )
+                .await,
+        );
+
+        if let Some(call_lock) = self.call_lock.upgrade() {
+            let hash_source = self.hash_sources.lock().await;
+
+            let mut vec_sources = self.vec_sources.lock().await;
+
+            let src = vec_sources.remove(0);
+
+            let mut handler = call_lock.lock().await;
+            let src_clone = src.1.clone();
+            let song = handler.play_only_source(src_clone.into());
+            let _ = song.set_volume(1.0);
+            let _ = song.enable_loop();
+
+            let current_hour_key = TimeToKey.current_hour();
+            let current_hour_compressed =
+                compress_song(hash_source.get(&current_hour_key).unwrap()).await;
+            vec_sources.push((current_hour_key, current_hour_compressed));
+
+            println!("cache contents: {:?}", vec_sources);
+            println!("cache size: {:?}", vec_sources.len());
+        }
+        None
+    }
 }
 
 #[command]
