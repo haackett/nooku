@@ -10,7 +10,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::{env, fs, vec};
 
 use serenity::futures::lock::MutexGuard;
@@ -288,9 +288,9 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
         let _ = song.set_volume(1.0);
         let _ = song.enable_loop();
 
-        vec_sources.insert(0, vec_source);
+        //vec_sources.insert(0, vec_source);
 
-        if vec_sources.len() == 1 {
+        if vec_sources.len() == 0 {
             let next_hour_key = TimeToKey.next_hour();
             let next_hour_compressed =
                 compress_song(hash_source.get(&next_hour_key).unwrap()).await;
@@ -315,12 +315,13 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
             next_hour, time_to_top_hour
         );
 
-        song.add_event(
+        handler.add_global_event(
             Event::Periodic(Duration::hours(1).to_std().unwrap(), Some(time_to_top_hour)),
             HourChange {
                 chan_id,
-                //handler: &handler,
                 http: send_http,
+                call_lock: call_lock_for_evt,
+                sources: vec_sources_lock_for_evt,
             },
         );
     } else {
@@ -336,23 +337,33 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
 
 struct HourChange {
     chan_id: ChannelId,
-    //handler: MutexGuard<Call>,
     http: Arc<Http>,
+    call_lock: Weak<Mutex<Call>>,
+    sources: Arc<Mutex<Vec<(String, Compressed)>>>,
 }
 
 #[async_trait]
 impl VoiceEventHandler for HourChange {
-    async fn act(&self, ctx: &EventContext<'_>) -> Option<Event> {
+    async fn act(&self, _ctx: &EventContext<'_>) -> Option<Event> {
         check_msg(
             self.chan_id
                 .say(
                     &self.http,
-                    &format!("It is now {} o' clock!", Local::now().hour()),
+                    &format!("It is now {} O' clock!", Local::now().hour()),
                 )
                 .await,
         );
-        if let EventContext::Track(&[(_state, track)]) = ctx {
-            let _ = track.disable_loop();
+        if let Some(call_lock) = self.call_lock.upgrade() {
+            let src = {
+                let mut sources = self.sources.lock().await;
+                sources.remove(0)
+            };
+
+            let mut handler = call_lock.lock().await;
+            let src_clone = src.1.clone();
+            let song = handler.play_only_source(src_clone.into());
+            let _ = song.set_volume(1.0);
+            let _ = song.enable_loop();
         }
         None
     }
