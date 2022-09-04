@@ -247,7 +247,7 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
                 .say(
                     &ctx.http,
                     &format!(
-                        "Joined {} at <t:{}:t>!",
+                        "Joined {} <t:{}:R>.",
                         connect_to.mention(),
                         Utc::now().timestamp()
                     ),
