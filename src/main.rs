@@ -319,7 +319,13 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
 
         let now = Local::now();
         //Errors would occur from the event firing before local time changed. 1 Second added to try to prevent this.
-        let next_hour = (now + Duration::hours(1)).with_second(1).unwrap();
+        let next_hour = (now + Duration::hours(1))
+            .with_minute(0)
+            .unwrap()
+            .with_second(1)
+            .unwrap()
+            .with_nanosecond(0)
+            .unwrap();
 
         let time_to_top_hour = next_hour.signed_duration_since(now).to_std().unwrap();
 
