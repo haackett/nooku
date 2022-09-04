@@ -44,6 +44,7 @@ use serenity::{
 
 use chrono::*;
 
+use songbird::error::JoinError;
 use songbird::input::cached;
 use songbird::tracks::TrackError;
 use songbird::{
@@ -134,7 +135,7 @@ async fn compress_song(file_path: &PathBuf) -> Compressed {
     let cached_song = Compressed::new(
         input::ffmpeg(file_path)
             .await
-            .expect("File should be in songs folder."),
+            .expect("File not found in the songs folder."),
         Bitrate::BitsPerSecond(128_000),
     )
     .expect("These parameters are well-defined.");
@@ -187,7 +188,7 @@ async fn main() {
         }
 
         println!("{:?}", song_map);
-        println!("{} songs", song_map.len());
+        println!("{} songs found in folder.", song_map.len());
 
         let mut song_cache = vec![];
 
@@ -236,6 +237,18 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
         .await
         .expect("Songbird Voice client placed in at initialisation.")
         .clone();
+
+    //Gets the currently connected channel ID to disallow multiple calls from ~play. This prevents multiple Events from being registered.
+    let manager_call = manager.get(guild_id);
+    let current_call_id: Option<songbird::id::ChannelId> = match manager_call {
+        Some(_) => manager_call.unwrap().lock().await.current_channel(),
+        None => None,
+    };
+    if current_call_id != None && current_call_id.unwrap().to_string() == connect_to.to_string() {
+        check_msg(msg.reply(ctx, "Already in same voice chat!").await);
+        return Ok(());
+    }
+
     let (handler_lock, success_reader) = manager.join(guild_id, connect_to).await;
 
     let call_lock_for_evt = Arc::downgrade(&handler_lock);
@@ -305,9 +318,8 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
         let send_http = ctx.http.clone();
 
         let now = Local::now();
-
         //Errors would occur from the event firing before local time changed. 1 Second added to try to prevent this.
-        let next_hour = now.date().and_hms(now.hour() + 1, 0, 1);
+        let next_hour = (now + Duration::hours(1)).with_second(1).unwrap();
 
         let time_to_top_hour = next_hour.signed_duration_since(now).to_std().unwrap();
 
@@ -360,7 +372,7 @@ impl VoiceEventHandler for HourChange {
             self.chan_id
                 .say(
                     &self.http,
-                    &format!("It is now <t:{}:t> !", Utc::now().timestamp()),
+                    &format!("It is now <t:{}:t>!", Utc::now().timestamp()),
                 )
                 .await,
         );
