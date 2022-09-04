@@ -113,19 +113,27 @@ impl TimeToKey {
     }
 
     fn next_hour(&self) -> String {
-        let mut hour = Local::now().hour();
-        if hour == 23 {
-            hour = 0;
-        } else {
-            hour += 1;
-        }
+        // let mut hour = Local::now().hour();
+        // if hour == 23 {
+        //     hour = 0;
+        // } else {
+        //     hour += 1;
+        // }
+        let next_hour = (Local::now() + Duration::hours(1))
+            .with_minute(0)
+            .unwrap()
+            .with_second(0)
+            .unwrap()
+            .with_nanosecond(0)
+            .unwrap()
+            .hour();
         let mut key = String::new();
         key.push('0');
-        if hour < 10 {
+        if next_hour < 10 {
             key.push('0');
-            key.push_str(hour.to_string().as_str());
+            key.push_str(next_hour.to_string().as_str());
         } else {
-            key.push_str(hour.to_string().as_str());
+            key.push_str(next_hour.to_string().as_str());
         }
         key
     }
@@ -318,7 +326,7 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
         let send_http = ctx.http.clone();
 
         let now = Local::now();
-        //Errors would occur from the event firing before local time changed. 1 Second added to try to prevent this.
+        //Errors would occur from the event firing before local time changed. 1 second added to try to prevent this.
         let next_hour = (now + Duration::hours(1))
             .with_minute(0)
             .unwrap()
@@ -337,6 +345,8 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
         println!("cache contents: {:?}", vec_sources);
         println!("cache size: {:?}", vec_sources.len());
 
+        //removes all global events before adding the hourly global event. REMOVE THIS IF USING MORE THAN JUST THIS GLOBAL EVENT!!!
+        handler.remove_all_global_events();
         handler.add_global_event(
             Event::Periodic(Duration::hours(1).to_std().unwrap(), Some(time_to_top_hour)),
             //1 Second duration for testing but current hour will be broken
