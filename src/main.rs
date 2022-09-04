@@ -9,15 +9,12 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::{env, fs, vec};
 
-use serenity::futures::lock::MutexGuard;
-use serenity::futures::TryFutureExt;
 use serenity::http::Http;
 use serenity::model::id::ChannelId;
-use serenity::model::Timestamp;
+
 use serenity::prelude::{Mentionable, Mutex, TypeMapKey};
 // This trait adds the `register_songbird` and `register_songbird_with` methods
 // to the client builder below, making it easy to install this voice client.
@@ -33,7 +30,7 @@ use serenity::{
     framework::{
         standard::{
             macros::{command, group},
-            Args, CommandResult,
+            CommandResult,
         },
         StandardFramework,
     },
@@ -43,18 +40,10 @@ use serenity::{
 };
 
 use chrono::*;
-
-use songbird::error::JoinError;
-use songbird::input::cached;
-use songbird::tracks::TrackError;
 use songbird::{
     driver::Bitrate,
-    input::{
-        self,
-        cached::{Compressed, Memory},
-        Input,
-    },
-    Call, Event, EventContext, EventHandler as VoiceEventHandler, TrackEvent,
+    input::{self, cached::Compressed},
+    Call, Event, EventContext, EventHandler as VoiceEventHandler,
 };
 
 struct Handler;
@@ -66,23 +55,23 @@ impl EventHandler for Handler {
     }
 }
 
-enum CachedSound {
-    Compressed(Compressed),
-    Uncompressed(Memory),
-}
+// enum CachedSound {
+//     Compressed(Compressed),
+//     Uncompressed(Memory),
+// }
 
-impl From<&CachedSound> for Input {
-    fn from(obj: &CachedSound) -> Self {
-        use CachedSound::*;
-        match obj {
-            Compressed(c) => c.new_handle().into(),
-            Uncompressed(u) => u
-                .new_handle()
-                .try_into()
-                .expect("Failed to create decoder for Memory source."),
-        }
-    }
-}
+// impl From<&CachedSound> for Input {
+//     fn from(obj: &CachedSound) -> Self {
+//         use CachedSound::*;
+//         match obj {
+//             Compressed(c) => c.new_handle().into(),
+//             Uncompressed(u) => u
+//                 .new_handle()
+//                 .try_into()
+//                 .expect("Failed to create decoder for Memory source."),
+//         }
+//     }
+// }
 
 struct SongMap;
 
@@ -326,13 +315,13 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
         let send_http = ctx.http.clone();
 
         let now = Local::now();
-        //Errors would occur from the event firing before local time changed. 1 second added to try to prevent this.
+        //Errors would occur from the event firing before local time changed. 1/2 second added to try to prevent this.
         let next_hour = (now + Duration::hours(1))
             .with_minute(0)
             .unwrap()
-            .with_second(1)
+            .with_second(0)
             .unwrap()
-            .with_nanosecond(0)
+            .with_nanosecond(500000000)
             .unwrap();
 
         let time_to_top_hour = next_hour.signed_duration_since(now).to_std().unwrap();
