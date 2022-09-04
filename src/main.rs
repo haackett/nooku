@@ -245,7 +245,7 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
         None => None,
     };
     if current_call_id != None && current_call_id.unwrap().to_string() == connect_to.to_string() {
-        check_msg(msg.reply(ctx, "Already in same voice chat!").await);
+        check_msg(msg.reply(ctx, "Already in same voice channel!").await);
         return Ok(());
     }
 
