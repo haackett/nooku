@@ -17,6 +17,7 @@ use serenity::futures::lock::MutexGuard;
 use serenity::futures::TryFutureExt;
 use serenity::http::Http;
 use serenity::model::id::ChannelId;
+use serenity::model::Timestamp;
 use serenity::prelude::{Mentionable, Mutex, TypeMapKey};
 // This trait adds the `register_songbird` and `register_songbird_with` methods
 // to the client builder below, making it easy to install this voice client.
@@ -235,7 +236,6 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
         .await
         .expect("Songbird Voice client placed in at initialisation.")
         .clone();
-
     let (handler_lock, success_reader) = manager.join(guild_id, connect_to).await;
 
     let call_lock_for_evt = Arc::downgrade(&handler_lock);
@@ -246,7 +246,11 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
             msg.channel_id
                 .say(
                     &ctx.http,
-                    &format!("Joined {} at {}", connect_to.mention(), Local::now()),
+                    &format!(
+                        "Joined {} at <t:{}:t>!",
+                        connect_to.mention(),
+                        Utc::now().timestamp()
+                    ),
                 )
                 .await,
         );
@@ -356,7 +360,7 @@ impl VoiceEventHandler for HourChange {
             self.chan_id
                 .say(
                     &self.http,
-                    &format!("It is now {} o' clock!", Local::now().hour()),
+                    &format!("It is now <t:{}:t> !", Utc::now().timestamp()),
                 )
                 .await,
         );
