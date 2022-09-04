@@ -1,11 +1,11 @@
 extern crate reqwest;
+extern crate serde_json;
 
-use std::fmt;
 use reqwest::*;
 
 pub const API_URL:&str = "https://api.openweathermap.org/data/2.5/";
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Weather {
     Clear,
     Rainy,
@@ -14,11 +14,12 @@ pub enum Weather {
 }
 
 impl Weather {
-    pub fn from_str(s: &str) -> Self {
-        match s {
-            "\"Clear\"" => Weather::Clear,
-            "\"Raining\"" => Weather::Rainy,
-            "\"Snowing\"" => Weather::Snowy,
+    pub fn from_id(id: &str) -> Self {
+        match id.chars().nth(0).unwrap_or_default() {
+            '2'|'3'|'5' => Weather::Rainy,
+            '6' => Weather::Snowy,
+            '7' => Weather::Unknown,    // TODO represents atmospheric conditions
+            '8' => Weather::Clear,
             _ => Weather::Unknown,
         }
 
@@ -29,7 +30,6 @@ pub struct Location {
     pub longitude: f64,
     pub latitude: f64,
 }
-
 
 pub async fn get_weather(loc: Location, api_key: &str) -> Result<Weather, > {
     let lat = loc.latitude;
@@ -44,13 +44,12 @@ pub async fn get_weather(loc: Location, api_key: &str) -> Result<Weather, > {
         Err(_) => serde_json::from_str("{}").unwrap(), 
     };
 
-    println!("{:#?}", json);
-
-    let weather_string = json.get("weather").unwrap()
+    let weather_id = json
+        .get("weather").unwrap()
         .get(0).unwrap()
-        .get("main").unwrap().to_string();
-
-    println!("{}", weather_string);
-
-    Ok(Weather::from_str(&weather_string))
+        .get("id").unwrap()
+        .to_string();
+    
+    Ok(Weather::from_id(&weather_id))    
 }
+
