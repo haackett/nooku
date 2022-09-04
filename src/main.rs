@@ -12,6 +12,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Weak};
 use std::{env, fs, vec};
 
+use nooku::weather::*; 
+
 use serenity::http::Http;
 use serenity::model::id::ChannelId;
 
@@ -91,7 +93,7 @@ impl TimeToKey {
     fn current_hour(&self) -> String {
         let hour = Local::now().hour();
         let mut key = String::new();
-        key.push('0');
+        
         if hour < 10 {
             key.push('0');
             key.push_str(hour.to_string().as_str());
@@ -102,12 +104,6 @@ impl TimeToKey {
     }
 
     fn next_hour(&self) -> String {
-        // let mut hour = Local::now().hour();
-        // if hour == 23 {
-        //     hour = 0;
-        // } else {
-        //     hour += 1;
-        // }
         let next_hour = (Local::now() + Duration::hours(1))
             .with_minute(0)
             .unwrap()
@@ -117,7 +113,7 @@ impl TimeToKey {
             .unwrap()
             .hour();
         let mut key = String::new();
-        key.push('0');
+
         if next_hour < 10 {
             key.push('0');
             key.push_str(next_hour.to_string().as_str());
@@ -189,9 +185,25 @@ async fn main() {
 
         let mut song_cache = vec![];
 
-        let song_to_cache = TimeToKey.current_hour();
+        let time_key = TimeToKey.current_hour();
+        let mut song_to_cache = match get_weather(location, api_key).await {
+            Ok(val) => {
+                match val {
+                    Weather::Clear => "0",
+                    Weather::Rainy => "1",
+                    Weather::Snowy => "2",
+                    Weather::Unknown => "0",
+                }
+            },
+            Err(e) => {
+                println!("Error fetching weather data: {}", e);
+                "0" // default to clear
+            }
+            
+        };
+        song_to_cache.to_string().push_str(&time_key);
 
-        let cached_path = song_map.get(&song_to_cache).unwrap();
+        let cached_path = song_map.get(song_to_cache.to_string()).unwrap();
         let cached_song = compress_song(cached_path).await;
 
         song_cache.push((song_to_cache, cached_song));
