@@ -237,13 +237,14 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
 
     //Gets the currently connected channel ID to disallow multiple calls from ~play. This prevents multiple Events from being registered.
     let manager_call = manager.get(guild_id);
-    let current_call_id: Option<songbird::id::ChannelId> = match manager_call {
-        Some(_) => manager_call.unwrap().lock().await.current_channel(),
-        None => None,
-    };
-    if current_call_id != None && current_call_id.unwrap().to_string() == connect_to.to_string() {
-        check_msg(msg.reply(ctx, "Already in same voice channel!").await);
-        return Ok(());
+    if manager_call.is_some() {
+        let current_call_id = manager_call.unwrap().lock().await.current_channel();
+        if current_call_id.is_some()
+            && current_call_id.unwrap().to_string() == connect_to.to_string()
+        {
+            check_msg(msg.reply(ctx, "Already in same voice channel!").await);
+            return Ok(());
+        }
     }
 
     let (handler_lock, success_reader) = manager.join(guild_id, connect_to).await;
