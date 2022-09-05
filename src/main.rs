@@ -48,12 +48,11 @@ use songbird::{
     Call, Event, EventContext, EventHandler as VoiceEventHandler,
 };
 
-
 const API_KEY: &str = include_str!("../api_key");
 const LOCATION: Location = Location {
-        latitude: 39.769,
-        longitude: -84.347,
-    };
+    latitude: 39.769,
+    longitude: -84.347,
+};
 
 struct Handler;
 
@@ -94,6 +93,7 @@ async fn get_key_current_hour() -> String {
     };
 
     if hour < 10 {
+        key.push('0');
         key.push_str(hour.to_string().as_str());
     } else {
         key.push_str(hour.to_string().as_str());
@@ -126,6 +126,7 @@ async fn get_key_next_hour() -> String {
     };
 
     if get_key_next_hour < 10 {
+        key.push('0');
         key.push_str(get_key_next_hour.to_string().as_str());
     } else {
         key.push_str(get_key_next_hour.to_string().as_str());
@@ -146,7 +147,7 @@ async fn compress_song(file_path: &PathBuf) -> Compressed {
 }
 
 #[group]
-#[commands(deafen, join, leave, mute, ping, undeafen, unmute, play)]
+#[commands(deafen, join, leave, mute, ping, undeafen, unmute, play, weather)]
 struct General;
 
 //Todo: Consider making a config file to allow the changing of directory name.
@@ -606,7 +607,15 @@ async fn undeafen(ctx: &Context, msg: &Message) -> CommandResult {
 #[command]
 #[only_in(guilds)]
 async fn weather(ctx: &Context, msg: &Message) -> CommandResult {
-    msg.say(ctx, format!("{:?}", get_weather(&LOCATION, API_KEY).await.unwrap())).await
+    check_msg(
+        msg.channel_id
+            .say(
+                &ctx.http,
+                format!("{:?}", get_weather(&LOCATION, API_KEY).await.unwrap()),
+            )
+            .await,
+    );
+    Ok(())
 }
 
 #[command]
