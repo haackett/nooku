@@ -31,7 +31,7 @@ pub struct Location {
     pub latitude: f64,
 }
 
-pub async fn get_weather(loc: Location, api_key: &str) -> Result<Weather, > {
+pub async fn get_weather(loc: &Location, api_key: &str) -> Result<Weather, > {
     let lat = loc.latitude;
     let lon = loc.longitude;
     let resp = reqwest::get(format!("{}weather?lat={}&lon={}&appid={}",API_URL,lat,lon,api_key))
