@@ -12,6 +12,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Weak};
 use std::{env, fs, vec};
 
+use nooku::weather::*;
+
 use serenity::http::Http;
 use serenity::model::id::ChannelId;
 
@@ -46,6 +48,13 @@ use songbird::{
     Call, Event, EventContext, EventHandler as VoiceEventHandler,
 };
 
+
+const API_KEY: &str = include_str!("../api_key");
+const LOCATION: Location = Location {
+        latitude: 39.769,
+        longitude: -84.347,
+    };
+
 struct Handler;
 
 #[async_trait]
@@ -54,24 +63,6 @@ impl EventHandler for Handler {
         println!("{} is connected at {}!", ready.user.name, Local::now());
     }
 }
-
-// enum CachedSound {
-//     Compressed(Compressed),
-//     Uncompressed(Memory),
-// }
-
-// impl From<&CachedSound> for Input {
-//     fn from(obj: &CachedSound) -> Self {
-//         use CachedSound::*;
-//         match obj {
-//             Compressed(c) => c.new_handle().into(),
-//             Uncompressed(u) => u
-//                 .new_handle()
-//                 .try_into()
-//                 .expect("Failed to create decoder for Memory source."),
-//         }
-//     }
-// }
 
 struct SongMap;
 
@@ -85,47 +76,61 @@ impl TypeMapKey for SongCache {
     type Value = Arc<Mutex<Vec<(String, Compressed)>>>;
 }
 
-struct TimeToKey;
+async fn get_key_current_hour() -> String {
+    let hour = Local::now().hour();
+    let mut key = String::new();
 
-impl TimeToKey {
-    fn current_hour(&self) -> String {
-        let hour = Local::now().hour();
-        let mut key = String::new();
-        key.push('0');
-        if hour < 10 {
-            key.push('0');
-            key.push_str(hour.to_string().as_str());
-        } else {
-            key.push_str(hour.to_string().as_str());
+    match get_weather(&LOCATION, API_KEY).await {
+        Ok(val) => match val {
+            Weather::Clear => key.push('0'),
+            Weather::Rainy => key.push('1'),
+            Weather::Snowy => key.push('2'),
+            Weather::Unknown => key.push('0'),
+        },
+        Err(e) => {
+            println!("Error fetching weather data: {}", e);
+            key.push('0') // default to clear
         }
-        key
-    }
+    };
 
-    fn next_hour(&self) -> String {
-        // let mut hour = Local::now().hour();
-        // if hour == 23 {
-        //     hour = 0;
-        // } else {
-        //     hour += 1;
-        // }
-        let next_hour = (Local::now() + Duration::hours(1))
-            .with_minute(0)
-            .unwrap()
-            .with_second(0)
-            .unwrap()
-            .with_nanosecond(0)
-            .unwrap()
-            .hour();
-        let mut key = String::new();
-        key.push('0');
-        if next_hour < 10 {
-            key.push('0');
-            key.push_str(next_hour.to_string().as_str());
-        } else {
-            key.push_str(next_hour.to_string().as_str());
-        }
-        key
+    if hour < 10 {
+        key.push_str(hour.to_string().as_str());
+    } else {
+        key.push_str(hour.to_string().as_str());
     }
+    key
+}
+
+async fn get_key_next_hour() -> String {
+    let get_key_next_hour = (Local::now() + Duration::hours(1))
+        .with_minute(0)
+        .unwrap()
+        .with_second(0)
+        .unwrap()
+        .with_nanosecond(0)
+        .unwrap()
+        .hour();
+    let mut key = String::new();
+
+    match get_weather(&LOCATION, API_KEY).await {
+        Ok(val) => match val {
+            Weather::Clear => key.push('0'),
+            Weather::Rainy => key.push('1'),
+            Weather::Snowy => key.push('2'),
+            Weather::Unknown => key.push('0'),
+        },
+        Err(e) => {
+            println!("Error fetching weather data: {}", e);
+            key.push('0') // default to clear
+        }
+    };
+
+    if get_key_next_hour < 10 {
+        key.push_str(get_key_next_hour.to_string().as_str());
+    } else {
+        key.push_str(get_key_next_hour.to_string().as_str());
+    }
+    key
 }
 
 async fn compress_song(file_path: &PathBuf) -> Compressed {
@@ -189,7 +194,7 @@ async fn main() {
 
         let mut song_cache = vec![];
 
-        let song_to_cache = TimeToKey.current_hour();
+        let song_to_cache = get_key_current_hour().await;
 
         let cached_path = song_map.get(&song_to_cache).unwrap();
         let cached_song = compress_song(cached_path).await;
@@ -288,7 +293,7 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
         let hash_source = hash_sources;
 
         let mut vec_source = vec_sources.remove(0);
-        let key = TimeToKey.current_hour();
+        let key = get_key_current_hour().await;
         //Refactor and replace with match statement? May be edge case if the order somehow gets messed up. Look into ensuring this cannot happen
         if vec_source.0 != key {
             if vec_sources.len() > 0 {
@@ -305,7 +310,7 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
         //vec_sources.insert(0, vec_source);
 
         if vec_sources.len() == 0 {
-            let next_hour_key = TimeToKey.next_hour();
+            let next_hour_key = get_key_next_hour().await;
             let next_hour_compressed =
                 compress_song(hash_source.get(&next_hour_key).unwrap()).await;
             vec_sources.push((next_hour_key, next_hour_compressed));
@@ -317,7 +322,7 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
 
         let now = Local::now();
         //Errors would occur from the event firing before local time changed. 1/2 second added to try to prevent this.
-        let next_hour = (now + Duration::hours(1))
+        let key_next_hour = (now + Duration::hours(1))
             .with_minute(0)
             .unwrap()
             .with_second(0)
@@ -325,11 +330,11 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
             .with_nanosecond(500000000)
             .unwrap();
 
-        let time_to_top_hour = next_hour.signed_duration_since(now).to_std().unwrap();
+        let time_to_top_hour = key_next_hour.signed_duration_since(now).to_std().unwrap();
 
         println!(
             "next hour: {} \ntime to next hour: {:?}",
-            next_hour, time_to_top_hour
+            key_next_hour, time_to_top_hour
         );
 
         println!("cache contents: {:?}", vec_sources);
@@ -382,6 +387,7 @@ impl VoiceEventHandler for HourChange {
                 )
                 .await,
         );
+
         if let Some(call_lock) = self.call_lock.upgrade() {
             let hash_source = self.hash_sources.lock().await;
 
@@ -389,7 +395,7 @@ impl VoiceEventHandler for HourChange {
 
             let mut src = vec_sources.remove(0);
 
-            let current_hour_key = TimeToKey.current_hour();
+            let current_hour_key = get_key_current_hour().await;
 
             println!("Current hour key: {}", current_hour_key);
 
@@ -406,7 +412,7 @@ impl VoiceEventHandler for HourChange {
             let _ = song.enable_loop();
 
             if vec_sources.len() == 0 {
-                let next_hour_key = TimeToKey.next_hour();
+                let next_hour_key = get_key_next_hour().await;
                 let next_hour_compressed =
                     compress_song(hash_source.get(&next_hour_key).unwrap()).await;
                 vec_sources.push((next_hour_key, next_hour_compressed));
@@ -595,6 +601,12 @@ async fn undeafen(ctx: &Context, msg: &Message) -> CommandResult {
     }
 
     Ok(())
+}
+
+#[command]
+#[only_in(guilds)]
+async fn weather(ctx: &Context, msg: &Message) -> CommandResult {
+    msg.say(ctx, format!("{:?}", get_weather(&LOCATION, API_KEY).await.unwrap())).await
 }
 
 #[command]
