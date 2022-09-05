@@ -20,3 +20,5 @@ songs/*.ogg
 songs/*.flac
 
 secret.fish
+
+api_key
