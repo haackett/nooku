@@ -605,6 +605,12 @@ async fn undeafen(ctx: &Context, msg: &Message) -> CommandResult {
 
 #[command]
 #[only_in(guilds)]
+async fn weather(ctx: &Context, msg: &Message) -> CommandResult {
+    msg.say(ctx, format!("{:?}", get_weather(&LOCATION, API_KEY).await.unwrap())).await
+}
+
+#[command]
+#[only_in(guilds)]
 async fn unmute(ctx: &Context, msg: &Message) -> CommandResult {
     let guild = msg.guild(&ctx.cache).unwrap();
     let guild_id = guild.id;
