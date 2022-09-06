@@ -417,8 +417,8 @@ impl VoiceEventHandler for CheckWeather {
         let key_check = get_key_current_hour(&mut weather_data).await;
         if weather_data.cached_weather != weather_data.playing_weather {
             println!(
-                "Old weather: {:?}\nNew weather: {:?}",
-                weather_data.playing_weather, weather_data.cached_weather
+                "Old weather: {:?}\nNew weather: {:?}\nKey for current hour: {}",
+                weather_data.playing_weather, weather_data.cached_weather, key_check
             );
             weather_data.playing_weather = match weather_data.cached_weather {
                 Weather::Clear => Weather::Clear,
@@ -436,6 +436,15 @@ impl VoiceEventHandler for CheckWeather {
                 let song = handler.play_only_source(current_hour_compressed.into());
                 let _ = song.set_volume(1.0);
                 let _ = song.enable_loop();
+
+                let _ = song.add_event(
+                    Event::Track(TrackEvent::Loop),
+                    CheckWeather {
+                        call_lock: self.call_lock.clone(),
+                        hash_sources: self.hash_sources.clone(),
+                        weather_cache: self.weather_cache.clone(),
+                    },
+                );
             }
         }
         None
