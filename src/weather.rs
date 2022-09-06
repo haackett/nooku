@@ -40,8 +40,8 @@ pub struct WeatherData {
 pub async fn get_weather(
     loc: &Location,
     api_key: &str,
-    mut weather_cache: WeatherData,
-) -> Result<WeatherData> {
+    mut weather_cache: &WeatherData,
+) -> Result<Weather> {
     let time_since_last_call = Utc::now().signed_duration_since(weather_cache.last_call);
     println!(
         "Time since last call to weather API: {}",
@@ -75,8 +75,8 @@ pub async fn get_weather(
             .to_string();
         weather_cache.cached_weather = Weather::from_id(&weather_id);
 
-        Ok(weather_cache)
+        Ok(Weather::from_id(&weather_id))
     } else {
-        Ok(weather_cache)
+        Ok(WeatherData.cached_weather)
     }
 }

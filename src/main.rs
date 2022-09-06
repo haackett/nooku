@@ -85,8 +85,8 @@ async fn get_key_current_hour(weather_cache: WeatherData) -> String {
     let hour = Local::now().hour();
     let mut key = String::new();
 
-    match get_weather(&LOCATION, API_KEY, weather_cache).await {
-        Ok(val) => match val.cached_weather {
+    match get_weather(&LOCATION, API_KEY, &weather_cache).await {
+        Ok(val) => match val {
             Weather::Clear => key.push('0'),
             Weather::Rainy => key.push('1'),
             Weather::Snowy => key.push('2'),
@@ -118,8 +118,8 @@ async fn get_key_next_hour(weather_cache: WeatherData) -> String {
         .hour();
     let mut key = String::new();
 
-    match get_weather(&LOCATION, API_KEY, weather_cache).await {
-        Ok(val) => match val.cached_weather {
+    match get_weather(&LOCATION, API_KEY, &weather_cache).await {
+        Ok(val) => match val {
             Weather::Clear => key.push('0'),
             Weather::Rainy => key.push('1'),
             Weather::Snowy => key.push('2'),
@@ -182,7 +182,7 @@ async fn main() {
     {
         let mut data = client.data.write().await;
 
-        let mut weather_cache = WeatherData {
+        let weather_cache = WeatherData {
             last_call: Utc.ymd(1970, 1, 1).and_hms(0, 0, 0),
             cached_weather: Weather::Clear,
         };
@@ -694,7 +694,7 @@ async fn weather(ctx: &Context, msg: &Message) -> CommandResult {
                 &ctx.http,
                 format!(
                     "{:?}",
-                    get_weather(&LOCATION, API_KEY, *weather_data)
+                    get_weather(&LOCATION, API_KEY, weather_data)
                         .await
                         .unwrap()
                         .cached_weather
