@@ -21,7 +21,7 @@ use serenity::prelude::{Mentionable, Mutex, TypeMapKey};
 // This trait adds the `register_songbird` and `register_songbird_with` methods
 // to the client builder below, making it easy to install this voice client.
 // The voice client can be retrieved in any command using `songbird::get(ctx).await`.
-use songbird::SerenityInit;
+use songbird::{SerenityInit, TrackEvent};
 
 // Import the `Context` to handle commands.
 use serenity::client::Context;
@@ -50,8 +50,8 @@ use songbird::{
 
 const API_KEY: &str = include_str!("../api_key");
 const LOCATION: Location = Location {
-    latitude: 39.769,
-    longitude: -84.347,
+    latitude: 40.058962,
+    longitude: -84.129421,
 };
 
 struct Handler;
@@ -75,12 +75,18 @@ impl TypeMapKey for SongCache {
     type Value = Arc<Mutex<Vec<(String, Compressed)>>>;
 }
 
-async fn get_key_current_hour() -> String {
+struct WeatherCache;
+
+impl TypeMapKey for WeatherCache {
+    type Value = Arc<Mutex<WeatherData>>;
+}
+
+async fn get_key_current_hour(weather_cache: WeatherData) -> String {
     let hour = Local::now().hour();
     let mut key = String::new();
 
-    match get_weather(&LOCATION, API_KEY).await {
-        Ok(val) => match val {
+    match get_weather(&LOCATION, API_KEY, weather_cache).await {
+        Ok(val) => match val.cached_weather {
             Weather::Clear => key.push('0'),
             Weather::Rainy => key.push('1'),
             Weather::Snowy => key.push('2'),
@@ -101,7 +107,7 @@ async fn get_key_current_hour() -> String {
     key
 }
 
-async fn get_key_next_hour() -> String {
+async fn get_key_next_hour(weather_cache: WeatherData) -> String {
     let get_key_next_hour = (Local::now() + Duration::hours(1))
         .with_minute(0)
         .unwrap()
@@ -112,8 +118,8 @@ async fn get_key_next_hour() -> String {
         .hour();
     let mut key = String::new();
 
-    match get_weather(&LOCATION, API_KEY).await {
-        Ok(val) => match val {
+    match get_weather(&LOCATION, API_KEY, weather_cache).await {
+        Ok(val) => match val.cached_weather {
             Weather::Clear => key.push('0'),
             Weather::Rainy => key.push('1'),
             Weather::Snowy => key.push('2'),
@@ -176,6 +182,11 @@ async fn main() {
     {
         let mut data = client.data.write().await;
 
+        let mut weather_cache = WeatherData {
+            last_call: Utc.ymd(1970, 1, 1).and_hms(0, 0, 0),
+            cached_weather: Weather::Clear,
+        };
+
         let mut song_map = HashMap::new();
 
         for file in fs::read_dir(SONG_PATH).unwrap() {
@@ -195,7 +206,7 @@ async fn main() {
 
         let mut song_cache = vec![];
 
-        let song_to_cache = get_key_current_hour().await;
+        let song_to_cache = get_key_current_hour(weather_cache).await;
 
         let cached_path = song_map.get(&song_to_cache).unwrap();
         let cached_song = compress_song(cached_path).await;
@@ -206,6 +217,7 @@ async fn main() {
 
         println!("Amount of cached songs {}", song_cache.len());
 
+        data.insert::<WeatherCache>(Arc::new(Mutex::new(weather_cache)));
         data.insert::<SongMap>(Arc::new(Mutex::new(song_map)));
         data.insert::<SongCache>(Arc::new(Mutex::new(song_cache)));
     }
@@ -255,7 +267,8 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
 
     let (handler_lock, success_reader) = manager.join(guild_id, connect_to).await;
 
-    let call_lock_for_evt = Arc::downgrade(&handler_lock);
+    let call_lock_for_global_evt = Arc::downgrade(&handler_lock);
+    let call_lock_for_track_evt = Arc::downgrade(&handler_lock);
 
     if let Ok(_reader) = success_reader {
         let mut handler = handler_lock.lock().await;
@@ -289,13 +302,26 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
             .get::<SongMap>()
             .cloned()
             .expect("Sound cache was installed at startup.");
-        let hash_sources_lock_for_evt = hash_sources_lock.clone();
+        let hash_sources_lock_for_global_evt = hash_sources_lock.clone();
+        let hash_sources_lock_for_track_evt = hash_sources_lock.clone();
         let hash_sources = hash_sources_lock.lock().await;
         let hash_source = hash_sources;
 
+        let weather_cache_lock = ctx
+            .data
+            .read()
+            .await
+            .get::<WeatherCache>()
+            .cloned()
+            .expect("Weather cache was installed at startup.");
+        let weather_cache_lock_for_global_evt = weather_cache_lock.clone();
+        let weather_cache_lock_for_track_evt = weather_cache_lock.clone();
+        let weather_cache = weather_cache_lock.lock().await;
+
         let mut vec_source = vec_sources.remove(0);
-        let key = get_key_current_hour().await;
-        //Refactor and replace with match statement? May be edge case if the order somehow gets messed up. Look into ensuring this cannot happen
+        let key = get_key_current_hour(*weather_cache).await;
+        let key_for_event = key.clone();
+
         if vec_source.0 != key {
             if vec_sources.len() > 0 {
                 vec_sources.remove(0);
@@ -311,7 +337,7 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
         //vec_sources.insert(0, vec_source);
 
         if vec_sources.len() == 0 {
-            let next_hour_key = get_key_next_hour().await;
+            let next_hour_key = get_key_next_hour(*weather_cache).await;
             let next_hour_compressed =
                 compress_song(hash_source.get(&next_hour_key).unwrap()).await;
             vec_sources.push((next_hour_key, next_hour_compressed));
@@ -353,9 +379,19 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
             HourChange {
                 chan_id,
                 http: send_http,
-                call_lock: call_lock_for_evt,
+                call_lock: call_lock_for_global_evt,
                 vec_sources: vec_sources_lock_for_evt,
-                hash_sources: hash_sources_lock_for_evt,
+                hash_sources: hash_sources_lock_for_global_evt,
+                weather_cache: weather_cache_lock_for_global_evt,
+            },
+        );
+        let _ = song.add_event(
+            Event::Track(TrackEvent::Loop),
+            CheckWeather {
+                call_lock: call_lock_for_track_evt,
+                hash_sources: hash_sources_lock_for_track_evt,
+                current_key: Arc::new(Mutex::new(key_for_event)),
+                weather_cache: weather_cache_lock_for_track_evt,
             },
         );
     } else {
@@ -369,12 +405,45 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
     Ok(())
 }
 
+struct CheckWeather {
+    call_lock: Weak<Mutex<Call>>,
+    hash_sources: Arc<Mutex<HashMap<String, PathBuf>>>,
+    current_key: Arc<Mutex<String>>,
+    weather_cache: Arc<Mutex<WeatherData>>,
+}
+
+#[async_trait]
+impl VoiceEventHandler for CheckWeather {
+    async fn act(&self, _ctx: &EventContext<'_>) -> Option<Event> {
+        let mut weather_data = self.weather_cache.lock().await;
+        let key_check = get_key_current_hour(*weather_data).await;
+        let mut key_source = self.current_key.lock().await;
+        if key_check != *key_source {
+            println!("Old key: {}\nNew key: {}", key_source, key_check);
+            *key_source = key_check;
+            if let Some(call_lock) = self.call_lock.upgrade() {
+                let hash_source = self.hash_sources.lock().await;
+
+                let current_hour_compressed =
+                    compress_song(hash_source.get(&*key_source).unwrap()).await;
+
+                let mut handler = call_lock.lock().await;
+                let song = handler.play_only_source(current_hour_compressed.into());
+                let _ = song.set_volume(1.0);
+                let _ = song.enable_loop();
+            }
+        }
+        None
+    }
+}
+
 struct HourChange {
     chan_id: ChannelId,
     http: Arc<Http>,
     call_lock: Weak<Mutex<Call>>,
     vec_sources: Arc<Mutex<Vec<(String, Compressed)>>>,
     hash_sources: Arc<Mutex<HashMap<String, PathBuf>>>,
+    weather_cache: Arc<Mutex<WeatherData>>,
 }
 
 #[async_trait]
@@ -394,9 +463,11 @@ impl VoiceEventHandler for HourChange {
 
             let mut vec_sources = self.vec_sources.lock().await;
 
+            let mut weather_data = self.weather_cache.lock().await;
+
             let mut src = vec_sources.remove(0);
 
-            let current_hour_key = get_key_current_hour().await;
+            let current_hour_key = get_key_current_hour(*weather_data).await;
 
             println!("Current hour key: {}", current_hour_key);
 
@@ -413,7 +484,7 @@ impl VoiceEventHandler for HourChange {
             let _ = song.enable_loop();
 
             if vec_sources.len() == 0 {
-                let next_hour_key = get_key_next_hour().await;
+                let next_hour_key = get_key_next_hour(*weather_data).await;
                 let next_hour_compressed =
                     compress_song(hash_source.get(&next_hour_key).unwrap()).await;
                 vec_sources.push((next_hour_key, next_hour_compressed));
@@ -607,11 +678,27 @@ async fn undeafen(ctx: &Context, msg: &Message) -> CommandResult {
 #[command]
 #[only_in(guilds)]
 async fn weather(ctx: &Context, msg: &Message) -> CommandResult {
+    let weather_cache_lock = ctx
+        .data
+        .read()
+        .await
+        .get::<WeatherCache>()
+        .cloned()
+        .expect("Weather cache was installed at startup.");
+    let weather_cache_lock_for_global_evt = weather_cache_lock.clone();
+    let weather_cache_lock_for_track_evt = weather_cache_lock.clone();
+    let weather_data = weather_cache_lock.lock().await;
     check_msg(
         msg.channel_id
             .say(
                 &ctx.http,
-                format!("{:?}", get_weather(&LOCATION, API_KEY).await.unwrap()),
+                format!(
+                    "{:?}",
+                    get_weather(&LOCATION, API_KEY, *weather_data)
+                        .await
+                        .unwrap()
+                        .cached_weather
+                ),
             )
             .await,
     );
