@@ -5,7 +5,9 @@ extern crate serde_json;
 use chrono::*;
 use reqwest::*;
 
-pub const API_URL: &str = "https://api.openweathermap.org/data/2.5/";
+const API_URL: &str = "https://api.openweathermap.org/data/2.5/";
+
+const API_COOLDOWN: i64 = 10;
 
 #[derive(Debug, PartialEq)]
 pub enum Weather {
@@ -35,21 +37,22 @@ pub struct Location {
 pub struct WeatherData {
     pub last_call: DateTime<Utc>,
     pub cached_weather: Weather,
+    pub playing_weather: Weather,
 }
 
 pub async fn get_weather(
     loc: &Location,
     api_key: &str,
-    mut weather_cache: &WeatherData,
+    weather_data: &mut WeatherData,
 ) -> Result<Weather> {
-    let time_since_last_call = Utc::now().signed_duration_since(weather_cache.last_call);
+    let time_since_last_call = Utc::now().signed_duration_since(weather_data.last_call);
     println!(
         "Time since last call to weather API: {}",
-        time_since_last_call
+        time_since_last_call.num_minutes()
     );
-    if time_since_last_call < Duration::minutes(10) {
+    if time_since_last_call > Duration::minutes(API_COOLDOWN) {
         println!("Calling weather API");
-        weather_cache.last_call = Utc::now();
+        weather_data.last_call = Utc::now();
         let lat = loc.latitude;
         let lon = loc.longitude;
         let resp = reqwest::get(format!(
@@ -73,10 +76,15 @@ pub async fn get_weather(
             .get("id")
             .unwrap()
             .to_string();
-        weather_cache.cached_weather = Weather::from_id(&weather_id);
+        weather_data.cached_weather = Weather::from_id(&weather_id);
 
         Ok(Weather::from_id(&weather_id))
     } else {
-        Ok(WeatherData.cached_weather)
+        match weather_data.cached_weather {
+            Weather::Clear => Ok(Weather::Clear),
+            Weather::Rainy => Ok(Weather::Rainy),
+            Weather::Snowy => Ok(Weather::Snowy),
+            Weather::Unknown => Ok(Weather::Unknown),
+        }
     }
 }
