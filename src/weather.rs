@@ -47,7 +47,7 @@ pub async fn get_weather(
 ) -> Result<Weather> {
     let time_since_last_call = Utc::now().signed_duration_since(weather_data.last_call);
     println!(
-        "Time since last call to weather API: {}",
+        "Time since last call to weather API: {} min.",
         time_since_last_call.num_minutes()
     );
     if time_since_last_call > Duration::minutes(API_COOLDOWN) {
@@ -76,6 +76,8 @@ pub async fn get_weather(
             .get("id")
             .unwrap()
             .to_string();
+
+        println!("Weather_ID: {}", weather_id);
         weather_data.cached_weather = Weather::from_id(&weather_id);
 
         Ok(Weather::from_id(&weather_id))

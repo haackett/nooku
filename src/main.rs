@@ -50,8 +50,8 @@ use songbird::{
 
 const API_KEY: &str = include_str!("../api_key");
 const LOCATION: Location = Location {
-    latitude: 40.854055,
-    longitude: -79.899377,
+    latitude: 39.771948,
+    longitude: -83.989809,
 };
 
 struct Handler;
@@ -418,9 +418,14 @@ impl VoiceEventHandler for CheckWeather {
         if weather_data.cached_weather != weather_data.playing_weather {
             println!(
                 "Old weather: {:?}\nNew weather: {:?}",
-                weather_data.playing_weather, key_check
+                weather_data.playing_weather, weather_data.cached_weather
             );
-            weather_data.playing_weather = Weather::from_id(&key_check);
+            weather_data.playing_weather = match weather_data.cached_weather {
+                Weather::Clear => Weather::Clear,
+                Weather::Rainy => Weather::Rainy,
+                Weather::Snowy => Weather::Snowy,
+                Weather::Unknown => Weather::Unknown,
+            };
             if let Some(call_lock) = self.call_lock.upgrade() {
                 let hash_source = self.hash_sources.lock().await;
 
@@ -482,6 +487,22 @@ impl VoiceEventHandler for HourChange {
             let song = handler.play_only_source(src_clone.into());
             let _ = song.set_volume(1.0);
             let _ = song.enable_loop();
+
+            weather_data.playing_weather = match weather_data.cached_weather {
+                Weather::Clear => Weather::Clear,
+                Weather::Rainy => Weather::Rainy,
+                Weather::Snowy => Weather::Snowy,
+                Weather::Unknown => Weather::Unknown,
+            };
+
+            let _ = song.add_event(
+                Event::Track(TrackEvent::Loop),
+                CheckWeather {
+                    call_lock: self.call_lock.clone(),
+                    hash_sources: self.hash_sources.clone(),
+                    weather_cache: self.weather_cache.clone(),
+                },
+            );
 
             if vec_sources.len() == 0 {
                 let next_hour_key = get_key_next_hour(&mut weather_data).await;
