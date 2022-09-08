@@ -50,8 +50,8 @@ use songbird::{
 
 const API_KEY: &str = include_str!("../api_key");
 const LOCATION: Location = Location {
-    latitude: 39.771948,
-    longitude: -83.989809,
+    latitude: 34.221924,
+    longitude: -79.814693,
 };
 
 struct Handler;
@@ -59,7 +59,7 @@ struct Handler;
 #[async_trait]
 impl EventHandler for Handler {
     async fn ready(&self, _: Context, ready: Ready) {
-        println!("{} is connected at {}!", ready.user.name, Local::now());
+        println!("{} connected at {}!", ready.user.name, Local::now());
     }
 }
 
@@ -193,6 +193,7 @@ async fn main() {
         for file in fs::read_dir(SONG_PATH).unwrap() {
             let file_path = file.unwrap().path();
             let file_path_str = file_path.display().to_string();
+            //Reads first 3 characters of file name containing the needed key
             let file_key = &file_path_str[SONG_PATH.chars().count()..SONG_PATH.chars().count() + 3];
             match file_key {
                 "REA" => {}
@@ -204,6 +205,11 @@ async fn main() {
 
         println!("{:?}", song_map);
         println!("{} songs found in folder.", song_map.len());
+
+        println!(
+            "Latitude: {}\nLongitude: {}",
+            LOCATION.latitude, LOCATION.longitude
+        );
 
         let mut song_cache = vec![];
 

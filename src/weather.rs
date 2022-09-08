@@ -51,17 +51,10 @@ pub async fn get_weather(
         time_since_last_call.num_minutes()
     );
     if time_since_last_call > Duration::minutes(API_COOLDOWN) {
-        println!("Calling weather API");
         weather_data.last_call = Utc::now();
-        let lat = loc.latitude;
-        let lon = loc.longitude;
-        let resp = reqwest::get(format!(
-            "{}weather?lat={}&lon={}&appid={}",
-            API_URL, lat, lon, api_key
-        ))
-        .await?
-        .text()
-        .await?;
+
+        println!("Calling weather API");
+        let resp = call_weather_api(loc, api_key).await.unwrap();
 
         let json: serde_json::Value = match serde_json::from_str(&resp) {
             Ok(val) => val,
@@ -89,4 +82,17 @@ pub async fn get_weather(
             Weather::Unknown => Ok(Weather::Unknown),
         }
     }
+}
+
+async fn call_weather_api(loc: &Location, api_key: &str) -> Result<String> {
+    let lat = loc.latitude;
+    let lon = loc.longitude;
+    let result = reqwest::get(format!(
+        "{}weather?lat={}&lon={}&appid={}",
+        API_URL, lat, lon, api_key
+    ))
+    .await?
+    .text()
+    .await?;
+    Ok(result)
 }
