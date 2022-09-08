@@ -9,6 +9,10 @@ const API_URL: &str = "https://api.openweathermap.org/data/2.5/";
 
 const API_COOLDOWN: i64 = 10;
 
+const WEATHER_ON_ERROR: &str = "{
+    \"weather\":[{\"description\":\"clear sky\",\"icon\":\"01d\",\"id\":800,\"main\":\"Clear\"}],
+}";
+
 #[derive(Debug, PartialEq)]
 pub enum Weather {
     Clear,
@@ -58,7 +62,10 @@ pub async fn get_weather(
 
         let json: serde_json::Value = match serde_json::from_str(&resp) {
             Ok(val) => val,
-            Err(_) => serde_json::from_str("{}").unwrap(),
+            Err(_) => {
+                println!("Error when calling weather API... defaulting to clear weather.");
+                serde_json::from_str(WEATHER_ON_ERROR).unwrap()
+            }
         };
 
         let weather_id = json
