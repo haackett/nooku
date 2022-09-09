@@ -27,4 +27,4 @@ __All of this is subject to change!!!__
 In future versions numerous settings are planned to be contained within a settings file instead of hardcoded or contained in a file.
 
 #### This bot is incomplete!
-This bot is a WIP and will often break or throw errors and crash. If you need a stable bot this is not the bot for you at the moment. I take no responsibility for any harm caused by the bot. The code is inefficient but I am still actively working to improve it. 
+This bot is a WIP and will often break or throw errors and crash. If you need a stable bot, this is not the bot for you at the moment. I take no responsibility for any harm caused by the bot. The code is inefficient but I am still actively working to improve it. 
