@@ -19,8 +19,10 @@ __Example Folder Layout__
     - weather.rs
   - songs/
     - (72 songs files)
+    - README.TXT
   - api_key (contains the weather API key)
   - secret.bash (Used to **source** the bot API key as an environment variable which is one method of adding environment variables)
+  - README.md
 
 __All of this is subject to change!!!__ 
 
