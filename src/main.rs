@@ -353,9 +353,8 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
 
         let send_http = ctx.http.clone();
 
-        let now = Local::now();
         //Errors would occur from the event firing before local time changed. 1/2 second added to try to prevent this.
-        let key_next_hour = (now + Duration::hours(1))
+        let key_next_hour = (Local::now() + Duration::hours(1))
             .with_minute(0)
             .unwrap()
             .with_second(0)
@@ -363,7 +362,10 @@ async fn play(ctx: &Context, msg: &Message) -> CommandResult {
             .with_nanosecond(500000000)
             .unwrap();
 
-        let time_to_top_hour = key_next_hour.signed_duration_since(now).to_std().unwrap();
+        let time_to_top_hour = key_next_hour
+            .signed_duration_since(Local::now())
+            .to_std()
+            .unwrap();
 
         println!(
             "next hour: {} \ntime to next hour: {:?}",
